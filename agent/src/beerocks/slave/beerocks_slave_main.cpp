@@ -29,6 +29,7 @@ BEEROCKS_INIT_BEEROCKS_VERSION
 static bool g_running = true;
 static int s_signal   = 0;
 static std::string g_son_slave_iface;
+static bool g_non_intel = false;
 
 // Pointer to logger instance
 static beerocks::logging *s_pLogger = nullptr;
@@ -95,12 +96,17 @@ static void init_signals()
 static bool parse_arguments(int argc, char *argv[])
 {
     int opt;
-    while ((opt = getopt(argc, argv, "i:w:t:q:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:nw:t:q:")) != -1) {
         switch (opt) {
         case 'i': {
             g_son_slave_iface.assign(optarg);
             break;
         }
+
+        case 'n':
+            g_non_intel = true;
+            break;
+
         case 't': // enable radio Tx using platform API, example: -t waln0 1
         case 'w': // enable radio interfce using platform API, example: -w waln0 1
         {
@@ -175,6 +181,7 @@ static void fill_son_slave_config(beerocks::config_file::sConfigSlave &beerocks_
     son_slave_conf.backhaul_wireless_iface_filter_low =
         beerocks::string_utils::stoi(beerocks_slave_conf.sta_iface_filter_low[slave_num]);
     son_slave_conf.backhaul_wireless_iface_type = son_slave_conf.hostap_iface_type;
+    son_slave_conf.non_intel                    = beerocks_slave_conf.non_intel;
 }
 
 static void son_slave_watchdog(beerocks::config_file::sConfigSlave &beerocks_slave_conf)
@@ -271,8 +278,9 @@ static int run_beerocks_slave(beerocks::config_file::sConfigSlave &beerocks_slav
     s_pLogger = &slave_logger;
     slave_logger.apply_settings();
     LOG(INFO) << std::endl
-              << "Running " << base_slave_name << " Version " << BEEROCKS_VERSION << " Build date "
-              << BEEROCKS_BUILD_DATE << std::endl
+              << "Running " << base_slave_name
+              << (beerocks_slave_conf.non_intel ? " (non-intel)" : "") << " Version "
+              << BEEROCKS_VERSION << " Build date " << BEEROCKS_BUILD_DATE << std::endl
               << std::endl;
     beerocks::version::log_version(argc, argv);
 
@@ -390,8 +398,9 @@ static int run_son_slave(int slave_num, beerocks::config_file::sConfigSlave &bee
     s_pLogger = &slave_logger;
     slave_logger.apply_settings();
     LOG(INFO) << std::endl
-              << "Running SON " << base_slave_name << " Version " << BEEROCKS_VERSION
-              << " Build date " << BEEROCKS_BUILD_DATE << std::endl
+              << "Running SON " << base_slave_name
+              << (beerocks_slave_conf.non_intel ? " (non-intel)" : "") << " Version "
+              << BEEROCKS_VERSION << " Build date " << BEEROCKS_BUILD_DATE << std::endl
               << std::endl;
     beerocks::version::log_version(argc, argv);
 
@@ -505,6 +514,9 @@ int main(int argc, char *argv[])
         }
     }
 
+    //Handle -n option (non-intel agent)
+    beerocks_slave_conf.non_intel = g_non_intel;
+
     //Handle -i option (start given son slave)
     if (!g_son_slave_iface.empty()) {
         //start given slave
@@ -538,6 +550,8 @@ int main(int argc, char *argv[])
                 file_name = BEEROCKS_BIN_PATH + std::string(BEEROCKS_AGENT);
             }
             std::string cmd = file_name + " -i " + beerocks_slave_conf.hostap_iface[slave_num];
+            if (beerocks_slave_conf.non_intel)
+                cmd += " -n";
             beerocks::SYSTEM_CALL(cmd, 0, true);
         }
     }

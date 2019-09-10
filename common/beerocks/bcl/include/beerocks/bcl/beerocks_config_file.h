@@ -87,6 +87,7 @@ public:
 
     typedef struct { // slave
         //[global]
+        bool non_intel;
         std::string platform;
         std::string temp_path;
         std::string enable_arp_monitor;
