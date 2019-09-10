@@ -113,7 +113,7 @@ prplmesh_controller_stop() {
 
 prplmesh_agent_start() {
     echo "prplmesh_agent_start - start beerocks_agent process..."
-    @CMAKE_INSTALL_PREFIX@/bin/beerocks_agent &
+    @CMAKE_INSTALL_PREFIX@/bin/beerocks_agent $AGENT_OPTS &
 }
 
 prplmesh_agent_stop() {
@@ -214,7 +214,9 @@ usage() {
 }
 
 main() {
-    OPTS=`getopt -o 'hvm:sdC:D:' --long verbose,help,mode:skip-platform,delete-logs,iface-ctrl,iface-data -n 'parse-options' -- "$@"`
+    OPTS=`getopt -o 'hvm:nsdC:D:' \
+        --long 'verbose,help,mode:,non-intel,skip-platform,delete-logs,iface-ctrl:,iface-data:' -n 'parse-options' \
+        -- "$@"`
 
     if [ $? != 0 ] ; then err "Failed parsing options." >&2 ; usage; exit 1 ; fi
 
@@ -225,6 +227,7 @@ main() {
             -v | --verbose)       VERBOSE=true; shift ;;
             -h | --help)          usage; exit 0; shift ;;
             -m | --mode)          PRPLMESH_MODE="$2"; shift; shift ;;
+            -n | --non-intel)     AGENT_OPTS="-n"; shift ;;
             -s | --skip-platform) PLATFORM_INIT=false; shift ;;
             -d | --delete-logs)   DELETE_LOGS=true; shift ;;
             -C | --iface-ctrl)    CONTROL_IFACE="$2"; shift; shift ;;
@@ -237,6 +240,7 @@ main() {
     dbg VERBOSE=$VERBOSE
     dbg PLATFORM_INIT=$PLATFORM_INIT
     dbg DELETE_LOGS=$DELETE_LOGS
+    dbg AGENT_OPTS="$AGENT_OPTS"
 
     case $1 in
         "start")
