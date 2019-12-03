@@ -1745,25 +1745,34 @@ bool backhaul_manager::handle_1905_discovery_query(ieee1905_1::CmduMessageRx &cm
                    << (int)mid;
         return false;
     }
+
     auto tlvSupportedService = cmdu_tx.addClass<wfa_map::tlvSupportedService>();
     if (!tlvSupportedService) {
         LOG(ERROR) << "addClass wfa_map::tlvSupportedService failed, mid=" << std::hex << (int)mid;
         return false;
     }
+    tlvSupportedService->supported_service_list_length() = 1;
     if (!tlvSupportedService->alloc_supported_service_list()) {
         LOG(ERROR) << "alloc_supported_service_list failed";
         return false;
     }
+
     auto supportedServiceTuple = tlvSupportedService->supported_service_list(0);
     if (!std::get<0>(supportedServiceTuple)) {
         LOG(ERROR) << "Failed accessing supported_service_list";
         return false;
     }
-    std::get<1>(supportedServiceTuple) =
-        wfa_map::tlvSupportedService::eSupportedService::MULTI_AP_CONTROLLER;
 
-    //TODO: the Operational BSS and Associated Clients TLVs are temporary dummies.
-    //later to be updated by real platfrom data from bpl
+    // return true;
+
+    auto supported_service = std::get<1>(supportedServiceTuple);
+
+    supported_service = wfa_map::tlvSupportedService::MULTI_AP_AGENT;
+
+    supported_service = supported_service;
+
+    // //TODO: the Operational BSS and Associated Clients TLVs are temporary dummies.
+    // //later to be updated by real platfrom data from bpl
     auto tlvApOperationalBSS = cmdu_tx.addClass<wfa_map::tlvApOperationalBSS>();
     if (!tlvApOperationalBSS) {
         LOG(ERROR) << "addClass wfa_map::tlvApOperationalBSS failed, mid=" << std::hex << (int)mid;
