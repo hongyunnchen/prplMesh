@@ -30,6 +30,8 @@
 #include <tlvf/ieee_1905_1/tlvSearchedRole.h>
 #include <tlvf/ieee_1905_1/tlvSupportedFreqBand.h>
 #include <tlvf/ieee_1905_1/tlvSupportedRole.h>
+#include <tlvf/wfa_map/tlvApOperationalBSS.h>
+#include <tlvf/wfa_map/tlvAssociatedClients.h>
 #include <tlvf/wfa_map/tlvHigherLayerData.h>
 #include <tlvf/wfa_map/tlvSearchedService.h>
 #include <tlvf/wfa_map/tlvSupportedService.h>
@@ -1712,7 +1714,7 @@ bool backhaul_manager::handle_1905_1_message(ieee1905_1::CmduMessageRx &cmdu_rx,
         return false;
     }
     case ieee1905_1::eMessageType::TOPOLOGY_QUERY_MESSAGE: {
-        return handle_1905_discovery_query(cmdu_rx);
+        return handle_1905_discovery_query(cmdu_rx, src_mac);
         //LOG(INFO) << "I got the Topology Query message!";
     }
     case ieee1905_1::eMessageType::HIGHER_LAYER_DATA_MESSAGE: {
@@ -1732,13 +1734,49 @@ bool backhaul_manager::handle_1905_1_message(ieee1905_1::CmduMessageRx &cmdu_rx,
  * @return true on success
  * @return false on failure
  */
-bool backhaul_manager::handle_1905_discovery_query(ieee1905_1::CmduMessageRx &cmdu_rx)
+bool backhaul_manager::handle_1905_discovery_query(ieee1905_1::CmduMessageRx &cmdu_rx,
+                                     const std::__cxx11::string &src_mac)
 {
     const auto mid = cmdu_rx.getMessageId();
     LOG(DEBUG) << "Received TOPOLOGY_QUERY_MESSAGE , mid=" << std::dec << int(mid);
-    //TODO - this should be part of the discovery agent, will be done as part of
-    //       agent certification
-    return true;
+    auto cmdu_tx_header = cmdu_tx.create(mid, ieee1905_1::eMessageType::TOPOLOGY_RESPONSE_MESSAGE);
+    if (!cmdu_tx_header) {
+        LOG(ERROR) << "Failed creating topology discovery response header! mid=" << std::hex
+                   << (int)mid;
+        return false;
+    }
+    auto tlvSupportedService = cmdu_tx.addClass<wfa_map::tlvSupportedService>();
+    if (!tlvSupportedService) {
+        LOG(ERROR) << "addClass wfa_map::tlvSupportedService failed, mid=" << std::hex << (int)mid;
+        return false;
+    }
+    if (!tlvSupportedService->alloc_supported_service_list()) {
+        LOG(ERROR) << "alloc_supported_service_list failed";
+        return false;
+    }
+    auto supportedServiceTuple = tlvSupportedService->supported_service_list(0);
+    if (!std::get<0>(supportedServiceTuple)) {
+        LOG(ERROR) << "Failed accessing supported_service_list";
+        return false;
+    }
+    std::get<1>(supportedServiceTuple) =
+        wfa_map::tlvSupportedService::eSupportedService::MULTI_AP_CONTROLLER;
+
+    //TODO: the Operational BSS and Associated Clients TLVs are temporary dummies.
+    //later to be updated by real platfrom data from bpl
+    auto tlvApOperationalBSS = cmdu_tx.addClass<wfa_map::tlvApOperationalBSS>();
+    if (!tlvApOperationalBSS) {
+        LOG(ERROR) << "addClass wfa_map::tlvApOperationalBSS failed, mid=" << std::hex << (int)mid;
+        return false;
+    }
+    auto tlvAssociatedClients = cmdu_tx.addClass<wfa_map::tlvAssociatedClients>();
+    if (!tlvAssociatedClients) {
+        LOG(ERROR) << "addClass wfa_map::tlvAssociatedClients failed, mid=" << std::hex << (int)mid;
+        return false;
+    }
+
+    LOG(DEBUG) << "Sending topology response message, mid: " << std::hex << (int)mid;
+    return send_cmdu_to_bus(cmdu_tx, src_mac, bridge_info.mac);
 }
 
 bool backhaul_manager::handle_1905_higher_layer_data_message(ieee1905_1::CmduMessageRx &cmdu_rx,
