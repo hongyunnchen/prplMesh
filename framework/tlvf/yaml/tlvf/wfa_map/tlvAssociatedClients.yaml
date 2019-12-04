@@ -27,7 +27,7 @@ sBssInfo:
     _length: [ clients_associated_list_length ]
 
 sClientInfo:
-  _type: struct
+  _type: class
   mac: sMacAddr
   time_since_last_association_sec: uint16_t
 
