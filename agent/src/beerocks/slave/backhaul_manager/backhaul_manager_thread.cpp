@@ -1763,7 +1763,22 @@ bool backhaul_manager::handle_1905_discovery_query(ieee1905_1::CmduMessageRx &cm
         return false;
     }
 
-    std::get<1>(supportedServiceTuple) = wfa_map::tlvSupportedService::MULTI_AP_AGENT;
+    std::get<1>(supportedServiceTuple) = wfa_map::tlvSupportedService::eSupportedService::MULTI_AP_CONTROLLER;
+
+    auto tlvApOperationalBSS=cmdu_tx.addClass<wfa_map::tlvApOperationalBSS>();
+    if (!tlvApOperationalBSS) {
+        LOG(ERROR) << "addClass wfa_map::tlvApOperationalBSS failed, mid=" << std::hex << (int)mid;
+        return false;
+    }
+    //add dummy data
+    auto radio_list = tlvApOperationalBSS->create_radio_list();
+    auto radio_bss_list = radio_list->create_radio_bss_list();    
+    radio_bss_list->set_ssid("wlan_0");
+    radio_list->add_radio_bss_list(radio_bss_list);
+    radio_bss_list = radio_list->create_radio_bss_list();
+    radio_bss_list->set_ssid("wlan_2");
+    radio_list->add_radio_bss_list(radio_bss_list);
+    tlvApOperationalBSS->add_radio_list(radio_list);
 
 #if 0
     // //TODO: the Operational BSS and Associated Clients TLVs are temporary dummies.
