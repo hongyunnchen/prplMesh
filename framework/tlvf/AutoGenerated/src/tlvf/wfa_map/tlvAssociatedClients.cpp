@@ -37,43 +37,67 @@ uint8_t& tlvAssociatedClients::bss_list_length() {
     return (uint8_t&)(*m_bss_list_length);
 }
 
-std::tuple<bool, tlvAssociatedClients::sBssInfo&> tlvAssociatedClients::bss_list(size_t idx) {
+std::tuple<bool, cBssInfo&> tlvAssociatedClients::bss_list(size_t idx) {
     bool ret_success = ( (m_bss_list_idx__ > 0) && (m_bss_list_idx__ > idx) );
     size_t ret_idx = ret_success ? idx : 0;
     if (!ret_success) {
         TLVF_LOG(ERROR) << "Requested index is greater than the number of available entries";
     }
-    return std::forward_as_tuple(ret_success, m_bss_list[ret_idx]);
+    return std::forward_as_tuple(ret_success, *(m_bss_list_vector[ret_idx]));
 }
 
-bool tlvAssociatedClients::alloc_bss_list(size_t count) {
-    if (m_lock_order_counter__ > 0) {;
+std::shared_ptr<cBssInfo> tlvAssociatedClients::create_bss_list() {
+    if (m_lock_order_counter__ > 0) {
         TLVF_LOG(ERROR) << "Out of order allocation for variable length list bss_list, abort!";
-        return false;
+        return nullptr;
     }
-    if (count == 0) {
-        TLVF_LOG(WARNING) << "can't allocate 0 bytes";
-        return false;
-    }
-    size_t len = sizeof(sBssInfo) * count;
-    if(getBuffRemainingBytes() < len )  {
-        TLVF_LOG(ERROR) << "Not enough available space on buffer - can't allocate";
-        return false;
+    size_t len = cBssInfo::get_initial_size();
+    if (m_lock_allocation__ || getBuffRemainingBytes() < len) {
+        TLVF_LOG(ERROR) << "Not enough available space on buffer";
+        return nullptr;
     }
     m_lock_order_counter__ = 0;
-    uint8_t *src = (uint8_t *)&m_bss_list[*m_bss_list_length];
-    uint8_t *dst = src + len;
+    m_lock_allocation__ = true;
+    uint8_t *src = (uint8_t *)m_bss_list;
+    if (m_bss_list_idx__ > 0) {
+        src = (uint8_t *)m_bss_list_vector[m_bss_list_idx__ - 1]->getBuffPtr();
+    }
     if (!m_parse__) {
+        uint8_t *dst = src + len;
         size_t move_length = getBuffRemainingBytes(src) - len;
         std::copy_n(src, move_length, dst);
     }
-    m_bss_list_idx__ += count;
-    *m_bss_list_length += count;
-    if (!buffPtrIncrementSafe(len)) { return false; }
-    if(m_length){ (*m_length) += len; }
-    if (!m_parse__) { 
-        for (size_t i = m_bss_list_idx__ - count; i < m_bss_list_idx__; i++) { m_bss_list[i].struct_init(); }
+    return std::make_shared<cBssInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+}
+
+bool tlvAssociatedClients::add_bss_list(std::shared_ptr<cBssInfo> ptr) {
+    if (ptr == nullptr) {
+        TLVF_LOG(ERROR) << "Received entry is nullptr";
+        return false;
     }
+    if (m_lock_allocation__ == false) {
+        TLVF_LOG(ERROR) << "No call to create_bss_list was called before add_bss_list";
+        return false;
+    }
+    uint8_t *src = (uint8_t *)m_bss_list;
+    if (m_bss_list_idx__ > 0) {
+        src = (uint8_t *)m_bss_list_vector[m_bss_list_idx__ - 1]->getBuffPtr();
+    }
+    if (ptr->getStartBuffPtr() != src) {
+        TLVF_LOG(ERROR) << "Received entry pointer is different than expected (expecting the same pointer returned from add method)";
+        return false;
+    }
+    if (ptr->getLen() > getBuffRemainingBytes(ptr->getStartBuffPtr())) {;
+        TLVF_LOG(ERROR) << "Not enough available space on buffer";
+        return false;
+    }
+    m_bss_list_idx__++;
+    if (!m_parse__) { (*m_bss_list_length)++; }
+    size_t len = ptr->getLen();
+    m_bss_list_vector.push_back(ptr);
+    if (!buffPtrIncrementSafe(len)) { return false; }
+    if(!m_parse__ && m_length){ (*m_length) += len; }
+    m_lock_allocation__ = false;
     return true;
 }
 
@@ -81,7 +105,7 @@ void tlvAssociatedClients::class_swap()
 {
     tlvf_swap(16, reinterpret_cast<uint8_t*>(m_length));
     for (size_t i = 0; i < (size_t)*m_bss_list_length; i++){
-        m_bss_list[i].struct_swap();
+        std::get<1>(bss_list(i)).class_swap();
     }
 }
 
@@ -110,10 +134,22 @@ bool tlvAssociatedClients::init()
     if (!m_parse__) *m_bss_list_length = 0;
     if (!buffPtrIncrementSafe(sizeof(uint8_t))) { return false; }
     if(m_length && !m_parse__){ (*m_length) += sizeof(uint8_t); }
-    m_bss_list = (sBssInfo*)m_buff_ptr__;
+    m_bss_list = (cBssInfo*)m_buff_ptr__;
     uint8_t bss_list_length = *m_bss_list_length;
-    m_bss_list_idx__ = bss_list_length;
-    if (!buffPtrIncrementSafe(sizeof(sBssInfo)*(bss_list_length))) { return false; }
+    m_bss_list_idx__ = 0;
+    for (size_t i = 0; i < bss_list_length; i++) {
+        auto bss_list = create_bss_list();
+        if (!bss_list) {
+            TLVF_LOG(ERROR) << "create_bss_list() failed";
+            return false;
+        }
+        if (!add_bss_list(bss_list)) {
+            TLVF_LOG(ERROR) << "add_bss_list() failed";
+            return false;
+        }
+        // swap back since bss_list will be swapped as part of the whole class swap
+        bss_list->class_swap();
+    }
     if (m_parse__ && m_swap__) { class_swap(); }
     if (m_parse__) {
         if (*m_type != eTlvTypeMap::TLV_ASSOCIATED_CLIENTS) {
@@ -124,31 +160,162 @@ bool tlvAssociatedClients::init()
     return true;
 }
 
-sClientInfo::sClientInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
+cBssInfo::cBssInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
     BaseClass(buff, buff_len, parse, swap_needed) {
     m_init_succeeded = init();
 }
-sClientInfo::sClientInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
+cBssInfo::cBssInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
 BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
     m_init_succeeded = init();
 }
-sClientInfo::~sClientInfo() {
+cBssInfo::~cBssInfo() {
 }
-sMacAddr& sClientInfo::mac() {
+sMacAddr& cBssInfo::bssid() {
+    return (sMacAddr&)(*m_bssid);
+}
+
+uint16_t& cBssInfo::clients_associated_list_length() {
+    return (uint16_t&)(*m_clients_associated_list_length);
+}
+
+std::tuple<bool, cClientInfo&> cBssInfo::clients_associated_list(size_t idx) {
+    bool ret_success = ( (m_clients_associated_list_idx__ > 0) && (m_clients_associated_list_idx__ > idx) );
+    size_t ret_idx = ret_success ? idx : 0;
+    if (!ret_success) {
+        TLVF_LOG(ERROR) << "Requested index is greater than the number of available entries";
+    }
+    return std::forward_as_tuple(ret_success, *(m_clients_associated_list_vector[ret_idx]));
+}
+
+std::shared_ptr<cClientInfo> cBssInfo::create_clients_associated_list() {
+    if (m_lock_order_counter__ > 0) {
+        TLVF_LOG(ERROR) << "Out of order allocation for variable length list clients_associated_list, abort!";
+        return nullptr;
+    }
+    size_t len = cClientInfo::get_initial_size();
+    if (m_lock_allocation__ || getBuffRemainingBytes() < len) {
+        TLVF_LOG(ERROR) << "Not enough available space on buffer";
+        return nullptr;
+    }
+    m_lock_order_counter__ = 0;
+    m_lock_allocation__ = true;
+    uint8_t *src = (uint8_t *)m_clients_associated_list;
+    if (m_clients_associated_list_idx__ > 0) {
+        src = (uint8_t *)m_clients_associated_list_vector[m_clients_associated_list_idx__ - 1]->getBuffPtr();
+    }
+    if (!m_parse__) {
+        uint8_t *dst = src + len;
+        size_t move_length = getBuffRemainingBytes(src) - len;
+        std::copy_n(src, move_length, dst);
+    }
+    return std::make_shared<cClientInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+}
+
+bool cBssInfo::add_clients_associated_list(std::shared_ptr<cClientInfo> ptr) {
+    if (ptr == nullptr) {
+        TLVF_LOG(ERROR) << "Received entry is nullptr";
+        return false;
+    }
+    if (m_lock_allocation__ == false) {
+        TLVF_LOG(ERROR) << "No call to create_clients_associated_list was called before add_clients_associated_list";
+        return false;
+    }
+    uint8_t *src = (uint8_t *)m_clients_associated_list;
+    if (m_clients_associated_list_idx__ > 0) {
+        src = (uint8_t *)m_clients_associated_list_vector[m_clients_associated_list_idx__ - 1]->getBuffPtr();
+    }
+    if (ptr->getStartBuffPtr() != src) {
+        TLVF_LOG(ERROR) << "Received entry pointer is different than expected (expecting the same pointer returned from add method)";
+        return false;
+    }
+    if (ptr->getLen() > getBuffRemainingBytes(ptr->getStartBuffPtr())) {;
+        TLVF_LOG(ERROR) << "Not enough available space on buffer";
+        return false;
+    }
+    m_clients_associated_list_idx__++;
+    if (!m_parse__) { (*m_clients_associated_list_length)++; }
+    size_t len = ptr->getLen();
+    m_clients_associated_list_vector.push_back(ptr);
+    if (!buffPtrIncrementSafe(len)) { return false; }
+    m_lock_allocation__ = false;
+    return true;
+}
+
+void cBssInfo::class_swap()
+{
+    m_bssid->struct_swap();
+    tlvf_swap(16, reinterpret_cast<uint8_t*>(m_clients_associated_list_length));
+    for (size_t i = 0; i < (size_t)*m_clients_associated_list_length; i++){
+        std::get<1>(clients_associated_list(i)).class_swap();
+    }
+}
+
+size_t cBssInfo::get_initial_size()
+{
+    size_t class_size = 0;
+    class_size += sizeof(sMacAddr); // bssid
+    class_size += sizeof(uint16_t); // clients_associated_list_length
+    return class_size;
+}
+
+bool cBssInfo::init()
+{
+    if (getBuffRemainingBytes() < kMinimumLength) {
+        TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
+        return false;
+    }
+    m_bssid = (sMacAddr*)m_buff_ptr__;
+    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) { return false; }
+    if (!m_parse__) { m_bssid->struct_init(); }
+    m_clients_associated_list_length = (uint16_t*)m_buff_ptr__;
+    if (!m_parse__) *m_clients_associated_list_length = 0;
+    if (!buffPtrIncrementSafe(sizeof(uint16_t))) { return false; }
+    m_clients_associated_list = (cClientInfo*)m_buff_ptr__;
+    uint16_t clients_associated_list_length = *m_clients_associated_list_length;
+    if (m_parse__ && m_swap__) {  tlvf_swap(16, reinterpret_cast<uint8_t*>(&clients_associated_list_length)); }
+    m_clients_associated_list_idx__ = 0;
+    for (size_t i = 0; i < clients_associated_list_length; i++) {
+        auto clients_associated_list = create_clients_associated_list();
+        if (!clients_associated_list) {
+            TLVF_LOG(ERROR) << "create_clients_associated_list() failed";
+            return false;
+        }
+        if (!add_clients_associated_list(clients_associated_list)) {
+            TLVF_LOG(ERROR) << "add_clients_associated_list() failed";
+            return false;
+        }
+        // swap back since clients_associated_list will be swapped as part of the whole class swap
+        clients_associated_list->class_swap();
+    }
+    if (m_parse__ && m_swap__) { class_swap(); }
+    return true;
+}
+
+cClientInfo::cClientInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
+    BaseClass(buff, buff_len, parse, swap_needed) {
+    m_init_succeeded = init();
+}
+cClientInfo::cClientInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+    m_init_succeeded = init();
+}
+cClientInfo::~cClientInfo() {
+}
+sMacAddr& cClientInfo::mac() {
     return (sMacAddr&)(*m_mac);
 }
 
-uint16_t& sClientInfo::time_since_last_association_sec() {
+uint16_t& cClientInfo::time_since_last_association_sec() {
     return (uint16_t&)(*m_time_since_last_association_sec);
 }
 
-void sClientInfo::class_swap()
+void cClientInfo::class_swap()
 {
     m_mac->struct_swap();
     tlvf_swap(16, reinterpret_cast<uint8_t*>(m_time_since_last_association_sec));
 }
 
-size_t sClientInfo::get_initial_size()
+size_t cClientInfo::get_initial_size()
 {
     size_t class_size = 0;
     class_size += sizeof(sMacAddr); // mac
@@ -156,7 +323,7 @@ size_t sClientInfo::get_initial_size()
     return class_size;
 }
 
-bool sClientInfo::init()
+bool cClientInfo::init()
 {
     if (getBuffRemainingBytes() < kMinimumLength) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
