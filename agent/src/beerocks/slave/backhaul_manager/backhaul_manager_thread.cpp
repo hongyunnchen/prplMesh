@@ -1780,6 +1780,28 @@ bool backhaul_manager::handle_1905_discovery_query(ieee1905_1::CmduMessageRx &cm
     radio_list->add_radio_bss_list(radio_bss_list);
     tlvApOperationalBSS->add_radio_list(radio_list);
 
+    auto tlvAssociatedClients = cmdu_tx.addClass<wfa_map::tlvAssociatedClients>();
+    if (!tlvAssociatedClients) {
+        LOG(ERROR) << "addClass wfa_map::tlvAssociatedClients failed, mid=" << std::hex << (int)mid;
+        return false;
+    }
+    auto bss_list = tlvAssociatedClients->create_bss_list();
+    auto client_1 = bss_list->create_clients_associated_list();
+    client_1->mac()=network_utils::mac_from_string("aa:bb:cc:dd:ee:ff");
+    client_1->time_since_last_association_sec() = 5;
+    bss_list->add_clients_associated_list(client_1);
+    auto client_2 = bss_list->create_clients_associated_list();
+    client_2->mac() = network_utils::mac_from_string("00:11:22:33:44:55");
+    client_2->time_since_last_association_sec() = 1;   
+    bss_list->add_clients_associated_list(client_2);
+    tlvAssociatedClients->add_bss_list(bss_list);
+    
+    bss_list->bssid()=network_utils::mac_from_string("ab:cd:ef:01:23:45");
+    
+    
+
+    
+    
 #if 0
     // //TODO: the Operational BSS and Associated Clients TLVs are temporary dummies.
     // //later to be updated by real platfrom data from bpl
