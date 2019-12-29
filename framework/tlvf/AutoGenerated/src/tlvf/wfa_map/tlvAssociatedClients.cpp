@@ -15,12 +15,12 @@
 
 using namespace wfa_map;
 
-tlvAssociatedClients::tlvAssociatedClients(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+tlvAssociatedClients::tlvAssociatedClients(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-tlvAssociatedClients::tlvAssociatedClients(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+tlvAssociatedClients::tlvAssociatedClients(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 tlvAssociatedClients::~tlvAssociatedClients() {
@@ -67,7 +67,7 @@ std::shared_ptr<cBssInfo> tlvAssociatedClients::create_bss_list() {
         size_t move_length = getBuffRemainingBytes(src) - len;
         std::copy_n(src, move_length, dst);
     }
-    return std::make_shared<cBssInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+    return std::make_shared<cBssInfo>(src, getBuffRemainingBytes(src), m_parse__);
 }
 
 bool tlvAssociatedClients::add_bss_list(std::shared_ptr<cBssInfo> ptr) {
@@ -95,7 +95,10 @@ bool tlvAssociatedClients::add_bss_list(std::shared_ptr<cBssInfo> ptr) {
     if (!m_parse__) { (*m_bss_list_length)++; }
     size_t len = ptr->getLen();
     m_bss_list_vector.push_back(ptr);
-    if (!buffPtrIncrementSafe(len)) { return false; }
+    if (!buffPtrIncrementSafe(len)) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << len << ") Failed!";
+        return false;
+    }
     if(!m_parse__ && m_length){ (*m_length) += len; }
     m_lock_allocation__ = false;
     return true;
@@ -109,6 +112,34 @@ void tlvAssociatedClients::class_swap()
     }
 }
 
+bool tlvAssociatedClients::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+        *m_length -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
+}
+
 size_t tlvAssociatedClients::get_initial_size()
 {
     size_t class_size = 0;
@@ -120,19 +151,28 @@ size_t tlvAssociatedClients::get_initial_size()
 
 bool tlvAssociatedClients::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_type = (eTlvTypeMap*)m_buff_ptr__;
     if (!m_parse__) *m_type = eTlvTypeMap::TLV_ASSOCIATED_CLIENTS;
-    if (!buffPtrIncrementSafe(sizeof(eTlvTypeMap))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(eTlvTypeMap))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(eTlvTypeMap) << ") Failed!";
+        return false;
+    }
     m_length = (uint16_t*)m_buff_ptr__;
     if (!m_parse__) *m_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint16_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint16_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint16_t) << ") Failed!";
+        return false;
+    }
     m_bss_list_length = (uint8_t*)m_buff_ptr__;
     if (!m_parse__) *m_bss_list_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint8_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint8_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint8_t) << ") Failed!";
+        return false;
+    }
     if(m_length && !m_parse__){ (*m_length) += sizeof(uint8_t); }
     m_bss_list = (cBssInfo*)m_buff_ptr__;
     uint8_t bss_list_length = *m_bss_list_length;
@@ -150,7 +190,7 @@ bool tlvAssociatedClients::init()
         // swap back since bss_list will be swapped as part of the whole class swap
         bss_list->class_swap();
     }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (m_parse__) { class_swap(); }
     if (m_parse__) {
         if (*m_type != eTlvTypeMap::TLV_ASSOCIATED_CLIENTS) {
             TLVF_LOG(ERROR) << "TLV type mismatch. Expected value: " << int(eTlvTypeMap::TLV_ASSOCIATED_CLIENTS) << ", received value: " << int(*m_type);
@@ -160,12 +200,12 @@ bool tlvAssociatedClients::init()
     return true;
 }
 
-cBssInfo::cBssInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+cBssInfo::cBssInfo(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-cBssInfo::cBssInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+cBssInfo::cBssInfo(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 cBssInfo::~cBssInfo() {
@@ -208,7 +248,7 @@ std::shared_ptr<cClientInfo> cBssInfo::create_clients_associated_list() {
         size_t move_length = getBuffRemainingBytes(src) - len;
         std::copy_n(src, move_length, dst);
     }
-    return std::make_shared<cClientInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+    return std::make_shared<cClientInfo>(src, getBuffRemainingBytes(src), m_parse__);
 }
 
 bool cBssInfo::add_clients_associated_list(std::shared_ptr<cClientInfo> ptr) {
@@ -236,7 +276,10 @@ bool cBssInfo::add_clients_associated_list(std::shared_ptr<cClientInfo> ptr) {
     if (!m_parse__) { (*m_clients_associated_list_length)++; }
     size_t len = ptr->getLen();
     m_clients_associated_list_vector.push_back(ptr);
-    if (!buffPtrIncrementSafe(len)) { return false; }
+    if (!buffPtrIncrementSafe(len)) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << len << ") Failed!";
+        return false;
+    }
     m_lock_allocation__ = false;
     return true;
 }
@@ -250,6 +293,33 @@ void cBssInfo::class_swap()
     }
 }
 
+bool cBssInfo::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
+}
+
 size_t cBssInfo::get_initial_size()
 {
     size_t class_size = 0;
@@ -260,19 +330,25 @@ size_t cBssInfo::get_initial_size()
 
 bool cBssInfo::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_bssid = (sMacAddr*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(sMacAddr) << ") Failed!";
+        return false;
+    }
     if (!m_parse__) { m_bssid->struct_init(); }
     m_clients_associated_list_length = (uint16_t*)m_buff_ptr__;
     if (!m_parse__) *m_clients_associated_list_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint16_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint16_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint16_t) << ") Failed!";
+        return false;
+    }
     m_clients_associated_list = (cClientInfo*)m_buff_ptr__;
     uint16_t clients_associated_list_length = *m_clients_associated_list_length;
-    if (m_parse__ && m_swap__) {  tlvf_swap(16, reinterpret_cast<uint8_t*>(&clients_associated_list_length)); }
+    if (m_parse__) {  tlvf_swap(16, reinterpret_cast<uint8_t*>(&clients_associated_list_length)); }
     m_clients_associated_list_idx__ = 0;
     for (size_t i = 0; i < clients_associated_list_length; i++) {
         auto clients_associated_list = create_clients_associated_list();
@@ -287,16 +363,16 @@ bool cBssInfo::init()
         // swap back since clients_associated_list will be swapped as part of the whole class swap
         clients_associated_list->class_swap();
     }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (m_parse__) { class_swap(); }
     return true;
 }
 
-cClientInfo::cClientInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+cClientInfo::cClientInfo(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-cClientInfo::cClientInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+cClientInfo::cClientInfo(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 cClientInfo::~cClientInfo() {
@@ -315,6 +391,33 @@ void cClientInfo::class_swap()
     tlvf_swap(16, reinterpret_cast<uint8_t*>(m_time_since_last_association_sec));
 }
 
+bool cClientInfo::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
+}
+
 size_t cClientInfo::get_initial_size()
 {
     size_t class_size = 0;
@@ -325,16 +428,22 @@ size_t cClientInfo::get_initial_size()
 
 bool cClientInfo::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_mac = (sMacAddr*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(sMacAddr) << ") Failed!";
+        return false;
+    }
     if (!m_parse__) { m_mac->struct_init(); }
     m_time_since_last_association_sec = (uint16_t*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(uint16_t))) { return false; }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (!buffPtrIncrementSafe(sizeof(uint16_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint16_t) << ") Failed!";
+        return false;
+    }
+    if (m_parse__) { class_swap(); }
     return true;
 }
 

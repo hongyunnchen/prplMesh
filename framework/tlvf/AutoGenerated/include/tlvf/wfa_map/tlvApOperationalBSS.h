@@ -19,6 +19,7 @@
 #include <string.h>
 #include <memory>
 #include <tlvf/BaseClass.h>
+#include <tlvf/ClassList.h>
 #include "tlvf/wfa_map/eTlvTypeMap.h"
 #include <tuple>
 #include <vector>
@@ -33,8 +34,8 @@ class cRadioBssInfo;
 class tlvApOperationalBSS : public BaseClass
 {
     public:
-        tlvApOperationalBSS(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        tlvApOperationalBSS(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        tlvApOperationalBSS(uint8_t* buff, size_t buff_len, bool parse = false);
+        tlvApOperationalBSS(std::shared_ptr<BaseClass> base, bool parse = false);
         ~tlvApOperationalBSS();
 
         const eTlvTypeMap& type();
@@ -43,7 +44,8 @@ class tlvApOperationalBSS : public BaseClass
         std::tuple<bool, cRadioInfo&> radio_list(size_t idx);
         std::shared_ptr<cRadioInfo> create_radio_list();
         bool add_radio_list(std::shared_ptr<cRadioInfo> ptr);
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:
@@ -61,8 +63,8 @@ class tlvApOperationalBSS : public BaseClass
 class cRadioInfo : public BaseClass
 {
     public:
-        cRadioInfo(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        cRadioInfo(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        cRadioInfo(uint8_t* buff, size_t buff_len, bool parse = false);
+        cRadioInfo(std::shared_ptr<BaseClass> base, bool parse = false);
         ~cRadioInfo();
 
         sMacAddr& radio_uid();
@@ -70,7 +72,8 @@ class cRadioInfo : public BaseClass
         std::tuple<bool, cRadioBssInfo&> radio_bss_list(size_t idx);
         std::shared_ptr<cRadioBssInfo> create_radio_bss_list();
         bool add_radio_bss_list(std::shared_ptr<cRadioBssInfo> ptr);
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:
@@ -87,8 +90,8 @@ class cRadioInfo : public BaseClass
 class cRadioBssInfo : public BaseClass
 {
     public:
-        cRadioBssInfo(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        cRadioBssInfo(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        cRadioBssInfo(uint8_t* buff, size_t buff_len, bool parse = false);
+        cRadioBssInfo(std::shared_ptr<BaseClass> base, bool parse = false);
         ~cRadioBssInfo();
 
         sMacAddr& radio_bssid();
@@ -98,7 +101,8 @@ class cRadioBssInfo : public BaseClass
         bool set_ssid(const std::string& str);
         bool set_ssid(const char buffer[], size_t size);
         bool alloc_ssid(size_t count = 1);
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:

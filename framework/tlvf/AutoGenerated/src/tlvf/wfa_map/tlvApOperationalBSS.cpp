@@ -15,12 +15,12 @@
 
 using namespace wfa_map;
 
-tlvApOperationalBSS::tlvApOperationalBSS(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+tlvApOperationalBSS::tlvApOperationalBSS(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-tlvApOperationalBSS::tlvApOperationalBSS(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+tlvApOperationalBSS::tlvApOperationalBSS(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 tlvApOperationalBSS::~tlvApOperationalBSS() {
@@ -67,7 +67,7 @@ std::shared_ptr<cRadioInfo> tlvApOperationalBSS::create_radio_list() {
         size_t move_length = getBuffRemainingBytes(src) - len;
         std::copy_n(src, move_length, dst);
     }
-    return std::make_shared<cRadioInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+    return std::make_shared<cRadioInfo>(src, getBuffRemainingBytes(src), m_parse__);
 }
 
 bool tlvApOperationalBSS::add_radio_list(std::shared_ptr<cRadioInfo> ptr) {
@@ -95,7 +95,10 @@ bool tlvApOperationalBSS::add_radio_list(std::shared_ptr<cRadioInfo> ptr) {
     if (!m_parse__) { (*m_radio_list_length)++; }
     size_t len = ptr->getLen();
     m_radio_list_vector.push_back(ptr);
-    if (!buffPtrIncrementSafe(len)) { return false; }
+    if (!buffPtrIncrementSafe(len)) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << len << ") Failed!";
+        return false;
+    }
     if(!m_parse__ && m_length){ (*m_length) += len; }
     m_lock_allocation__ = false;
     return true;
@@ -109,6 +112,34 @@ void tlvApOperationalBSS::class_swap()
     }
 }
 
+bool tlvApOperationalBSS::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+        *m_length -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
+}
+
 size_t tlvApOperationalBSS::get_initial_size()
 {
     size_t class_size = 0;
@@ -120,19 +151,28 @@ size_t tlvApOperationalBSS::get_initial_size()
 
 bool tlvApOperationalBSS::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_type = (eTlvTypeMap*)m_buff_ptr__;
     if (!m_parse__) *m_type = eTlvTypeMap::TLV_AP_OPERATIONAL_BSS;
-    if (!buffPtrIncrementSafe(sizeof(eTlvTypeMap))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(eTlvTypeMap))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(eTlvTypeMap) << ") Failed!";
+        return false;
+    }
     m_length = (uint16_t*)m_buff_ptr__;
     if (!m_parse__) *m_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint16_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint16_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint16_t) << ") Failed!";
+        return false;
+    }
     m_radio_list_length = (uint8_t*)m_buff_ptr__;
     if (!m_parse__) *m_radio_list_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint8_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint8_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint8_t) << ") Failed!";
+        return false;
+    }
     if(m_length && !m_parse__){ (*m_length) += sizeof(uint8_t); }
     m_radio_list = (cRadioInfo*)m_buff_ptr__;
     uint8_t radio_list_length = *m_radio_list_length;
@@ -150,7 +190,7 @@ bool tlvApOperationalBSS::init()
         // swap back since radio_list will be swapped as part of the whole class swap
         radio_list->class_swap();
     }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (m_parse__) { class_swap(); }
     if (m_parse__) {
         if (*m_type != eTlvTypeMap::TLV_AP_OPERATIONAL_BSS) {
             TLVF_LOG(ERROR) << "TLV type mismatch. Expected value: " << int(eTlvTypeMap::TLV_AP_OPERATIONAL_BSS) << ", received value: " << int(*m_type);
@@ -160,12 +200,12 @@ bool tlvApOperationalBSS::init()
     return true;
 }
 
-cRadioInfo::cRadioInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+cRadioInfo::cRadioInfo(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-cRadioInfo::cRadioInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+cRadioInfo::cRadioInfo(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 cRadioInfo::~cRadioInfo() {
@@ -208,7 +248,7 @@ std::shared_ptr<cRadioBssInfo> cRadioInfo::create_radio_bss_list() {
         size_t move_length = getBuffRemainingBytes(src) - len;
         std::copy_n(src, move_length, dst);
     }
-    return std::make_shared<cRadioBssInfo>(src, getBuffRemainingBytes(src), m_parse__, m_swap__);
+    return std::make_shared<cRadioBssInfo>(src, getBuffRemainingBytes(src), m_parse__);
 }
 
 bool cRadioInfo::add_radio_bss_list(std::shared_ptr<cRadioBssInfo> ptr) {
@@ -236,7 +276,10 @@ bool cRadioInfo::add_radio_bss_list(std::shared_ptr<cRadioBssInfo> ptr) {
     if (!m_parse__) { (*m_radio_bss_list_length)++; }
     size_t len = ptr->getLen();
     m_radio_bss_list_vector.push_back(ptr);
-    if (!buffPtrIncrementSafe(len)) { return false; }
+    if (!buffPtrIncrementSafe(len)) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << len << ") Failed!";
+        return false;
+    }
     m_lock_allocation__ = false;
     return true;
 }
@@ -249,6 +292,33 @@ void cRadioInfo::class_swap()
     }
 }
 
+bool cRadioInfo::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
+}
+
 size_t cRadioInfo::get_initial_size()
 {
     size_t class_size = 0;
@@ -259,16 +329,22 @@ size_t cRadioInfo::get_initial_size()
 
 bool cRadioInfo::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_radio_uid = (sMacAddr*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(sMacAddr) << ") Failed!";
+        return false;
+    }
     if (!m_parse__) { m_radio_uid->struct_init(); }
     m_radio_bss_list_length = (uint8_t*)m_buff_ptr__;
     if (!m_parse__) *m_radio_bss_list_length = 0;
-    if (!buffPtrIncrementSafe(sizeof(uint8_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint8_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint8_t) << ") Failed!";
+        return false;
+    }
     m_radio_bss_list = (cRadioBssInfo*)m_buff_ptr__;
     uint8_t radio_bss_list_length = *m_radio_bss_list_length;
     m_radio_bss_list_idx__ = 0;
@@ -285,16 +361,16 @@ bool cRadioInfo::init()
         // swap back since radio_bss_list will be swapped as part of the whole class swap
         radio_bss_list->class_swap();
     }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (m_parse__) { class_swap(); }
     return true;
 }
 
-cRadioBssInfo::cRadioBssInfo(uint8_t* buff, size_t buff_len, bool parse, bool swap_needed) :
-    BaseClass(buff, buff_len, parse, swap_needed) {
+cRadioBssInfo::cRadioBssInfo(uint8_t* buff, size_t buff_len, bool parse) :
+    BaseClass(buff, buff_len, parse) {
     m_init_succeeded = init();
 }
-cRadioBssInfo::cRadioBssInfo(std::shared_ptr<BaseClass> base, bool parse, bool swap_needed) :
-BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse, swap_needed){
+cRadioBssInfo::cRadioBssInfo(std::shared_ptr<BaseClass> base, bool parse) :
+BaseClass(base->getBuffPtr(), base->getBuffRemainingBytes(), parse){
     m_init_succeeded = init();
 }
 cRadioBssInfo::~cRadioBssInfo() {
@@ -354,13 +430,43 @@ bool cRadioBssInfo::alloc_ssid(size_t count) {
     }
     m_ssid_idx__ += count;
     *m_ssid_length += count;
-    if (!buffPtrIncrementSafe(len)) { return false; }
+    if (!buffPtrIncrementSafe(len)) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << len << ") Failed!";
+        return false;
+    }
     return true;
 }
 
 void cRadioBssInfo::class_swap()
 {
     m_radio_bssid->struct_swap();
+}
+
+bool cRadioBssInfo::finalize()
+{
+    if (m_parse__) {
+        TLVF_LOG(DEBUG) << "finalize() called but m_parse__ is set";
+        return true;
+    }
+    if (m_finalized__) {
+        TLVF_LOG(DEBUG) << "finalize() called for already finalized class";
+        return true;
+    }
+    if (!isPostInitSucceeded()) {
+        TLVF_LOG(ERROR) << "post init check failed";
+        return false;
+    }
+    if (m_inner__) {
+        if (!m_inner__->finalize()) {
+            TLVF_LOG(ERROR) << "m_inner__->finalize() failed";
+            return false;
+        }
+        auto tailroom = m_inner__->getMessageBuffLength() - m_inner__->getMessageLength();
+        m_buff_ptr__ -= tailroom;
+    }
+    class_swap();
+    m_finalized__ = true;
+    return true;
 }
 
 size_t cRadioBssInfo::get_initial_size()
@@ -373,20 +479,29 @@ size_t cRadioBssInfo::get_initial_size()
 
 bool cRadioBssInfo::init()
 {
-    if (getBuffRemainingBytes() < kMinimumLength) {
+    if (getBuffRemainingBytes() < get_initial_size()) {
         TLVF_LOG(ERROR) << "Not enough available space on buffer. Class init failed";
         return false;
     }
     m_radio_bssid = (sMacAddr*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(sMacAddr))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(sMacAddr) << ") Failed!";
+        return false;
+    }
     if (!m_parse__) { m_radio_bssid->struct_init(); }
     m_ssid_length = (uint8_t*)m_buff_ptr__;
-    if (!buffPtrIncrementSafe(sizeof(uint8_t))) { return false; }
+    if (!buffPtrIncrementSafe(sizeof(uint8_t))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(uint8_t) << ") Failed!";
+        return false;
+    }
     m_ssid = (char*)m_buff_ptr__;
     uint8_t ssid_length = *m_ssid_length;
     m_ssid_idx__ = ssid_length;
-    if (!buffPtrIncrementSafe(sizeof(char)*(ssid_length))) { return false; }
-    if (m_parse__ && m_swap__) { class_swap(); }
+    if (!buffPtrIncrementSafe(sizeof(char) * (ssid_length))) {
+        LOG(ERROR) << "buffPtrIncrementSafe(" << std::dec << sizeof(char) * (ssid_length) << ") Failed!";
+        return false;
+    }
+    if (m_parse__) { class_swap(); }
     return true;
 }
 

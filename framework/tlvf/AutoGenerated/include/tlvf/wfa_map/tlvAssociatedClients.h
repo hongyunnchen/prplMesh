@@ -19,6 +19,7 @@
 #include <string.h>
 #include <memory>
 #include <tlvf/BaseClass.h>
+#include <tlvf/ClassList.h>
 #include "tlvf/wfa_map/eTlvTypeMap.h"
 #include <tuple>
 #include <vector>
@@ -32,8 +33,8 @@ class cClientInfo;
 class tlvAssociatedClients : public BaseClass
 {
     public:
-        tlvAssociatedClients(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        tlvAssociatedClients(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        tlvAssociatedClients(uint8_t* buff, size_t buff_len, bool parse = false);
+        tlvAssociatedClients(std::shared_ptr<BaseClass> base, bool parse = false);
         ~tlvAssociatedClients();
 
         const eTlvTypeMap& type();
@@ -42,7 +43,8 @@ class tlvAssociatedClients : public BaseClass
         std::tuple<bool, cBssInfo&> bss_list(size_t idx);
         std::shared_ptr<cBssInfo> create_bss_list();
         bool add_bss_list(std::shared_ptr<cBssInfo> ptr);
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:
@@ -60,8 +62,8 @@ class tlvAssociatedClients : public BaseClass
 class cBssInfo : public BaseClass
 {
     public:
-        cBssInfo(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        cBssInfo(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        cBssInfo(uint8_t* buff, size_t buff_len, bool parse = false);
+        cBssInfo(std::shared_ptr<BaseClass> base, bool parse = false);
         ~cBssInfo();
 
         sMacAddr& bssid();
@@ -69,7 +71,8 @@ class cBssInfo : public BaseClass
         std::tuple<bool, cClientInfo&> clients_associated_list(size_t idx);
         std::shared_ptr<cClientInfo> create_clients_associated_list();
         bool add_clients_associated_list(std::shared_ptr<cClientInfo> ptr);
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:
@@ -86,13 +89,14 @@ class cBssInfo : public BaseClass
 class cClientInfo : public BaseClass
 {
     public:
-        cClientInfo(uint8_t* buff, size_t buff_len, bool parse = false, bool swap_needed = false);
-        cClientInfo(std::shared_ptr<BaseClass> base, bool parse = false, bool swap_needed = false);
+        cClientInfo(uint8_t* buff, size_t buff_len, bool parse = false);
+        cClientInfo(std::shared_ptr<BaseClass> base, bool parse = false);
         ~cClientInfo();
 
         sMacAddr& mac();
         uint16_t& time_since_last_association_sec();
-        void class_swap();
+        void class_swap() override;
+        bool finalize() override;
         static size_t get_initial_size();
 
     private:
