@@ -20,6 +20,15 @@ error=0
 
 bridge_name=br-lan
 
+get_host_bridge_name() {
+	ip l | grep $(docker network ls | grep prplMesh-net | cut -d' ' -f1) | perl -n -e '/\d+: ([^:]+)/ && print $1."\n"' | grep "^br-"
+}
+
+kill_tcpdump() {
+	status "Terminating tcpdump"
+	[ -n "$TCPDUMP_PROC" ] && kill $TCPDUMP_PROC;
+}
+
 container_ip() {
     docker exec -t "$1" ip -f inet addr show "$bridge_name" | grep -Po 'inet \K[\d.]+'
 }
@@ -589,10 +598,11 @@ test_init() {
 
 }
 usage() {
-    echo "usage: $(basename $0) [-hv]"
+    echo "usage: $(basename $0) [-hvds]"
     echo "  options:"
     echo "      -h|--help - show this help menu"
     echo "      -v|--verbose - verbosity on"
+    echo "	-d|--dump file.pcap - capture packets and dump them to the specified file (requires sudo)"
     echo "      -s|--stop-on-failure - stop on failure"
     echo "      --skip-init - skip init"
     echo ""
@@ -615,13 +625,14 @@ usage() {
     echo "      higher_layer_data_payload - Higher layer data payload over 1905 test"
 }
 main() {
-    OPTS=`getopt -o 'hvs' --long help,verbose,skip-init,stop-on-failure -n 'parse-options' -- "$@"`
+    OPTS=`getopt -o 'd:hvs' --long dump:,help,verbose,skip-init,stop-on-failure -n 'parse-options' -- "$@"`
     if [ $? != 0 ] ; then err "Failed parsing options." >&2 ; usage; exit 1 ; fi
 
     eval set -- "$OPTS"
 
     while true; do
         case "$1" in
+	    -d | --dump)	    DUMP=true; DUMPFILE=$2; shift; shift ;;
             -v | --verbose)         VERBOSE=true; redirect=; shift ;;
             -h | --help)            usage; exit 0; shift ;;
             -s | --stop-on-failure) STOP_ON_FAILURE=true; shift ;;
@@ -631,6 +642,12 @@ main() {
         esac
     done
     [ -z "$*" ] && set ${ALL_TESTS}
+    if [ "$DUMP" = "true" ]; then
+	    tcpdump -i $(get_host_bridge_name) -U -w $DUMPFILE &
+	    TCPDUMP_PROC=$!
+	    status "Starting tcpdump: pid=${TCPDUMP_PROC}"
+	    trap kill_tcpdump INT EXIT
+    fi
     info "Tests to run: $*"
     test_init
     for test in "$@"; do
@@ -664,5 +681,8 @@ main() {
 VERBOSE=false
 SKIP_INIT=false
 STOP_ON_FAILURE=false
+DUMP=false
+DUMPFILE=-
+TCPDUMP_PROC=
 
 main "$@"
